@@ -1,0 +1,8 @@
+README.md
+pyproject.toml
+src/NakedRAG.egg-info/PKG-INFO
+src/NakedRAG.egg-info/SOURCES.txt
+src/NakedRAG.egg-info/dependency_links.txt
+src/NakedRAG.egg-info/entry_points.txt
+src/NakedRAG.egg-info/requires.txt
+src/NakedRAG.egg-info/top_level.txt

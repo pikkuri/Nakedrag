@@ -1,3 +1,26 @@
+Metadata-Version: 2.4
+Name: NakedRAG
+Version: 0.1.0
+Summary: NakedRAG - Model Context Protocol (MCP)に準拠したRAG機能を持つPythonサーバー
+Author: NakedRAG Team
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Operating System :: OS Independent
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Topic :: Software Development :: Libraries :: Application Frameworks
+Classifier: Topic :: Communications :: Chat
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: mcp[cli]
+Requires-Dist: python-dotenv
+Requires-Dist: psycopg2-binary
+Requires-Dist: sentence-transformers
+Requires-Dist: markdown
+Requires-Dist: numpy
+Requires-Dist: markitdown[all]
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+
 # RAGのセットアップ方法
 
 ## 環境構築
@@ -100,7 +123,3 @@
 ```powershell
 uv run main.py
 ```
-
-
-
-# test

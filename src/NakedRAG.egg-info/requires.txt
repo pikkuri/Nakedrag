@@ -1,0 +1,10 @@
+mcp[cli]
+python-dotenv
+psycopg2-binary
+sentence-transformers
+markdown
+numpy
+markitdown[all]
+
+[dev]
+pytest

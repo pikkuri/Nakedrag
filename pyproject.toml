@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "NakedRAG"
+version = "0.1.0"
+description = "NakedRAG - Model Context Protocol (MCP)に準拠したRAG機能を持つPythonサーバー"
+authors = [
+    {name = "NakedRAG Team"}
+]
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Operating System :: OS Independent",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+    "Topic :: Communications :: Chat",
+]
+dependencies = [
+    "mcp[cli]",
+    "python-dotenv",
+    "psycopg2-binary",
+    "sentence-transformers",
+    "markdown",
+    "numpy",
+    "markitdown[all]",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+
+[project.scripts]
+nakedrag-server = "src.main:main"
+nakedrag-cli = "src.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

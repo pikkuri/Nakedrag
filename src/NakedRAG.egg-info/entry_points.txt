@@ -1,0 +1,3 @@
+[console_scripts]
+nakedrag-cli = src.cli:main
+nakedrag-server = src.main:main
