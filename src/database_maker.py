@@ -5,6 +5,11 @@ import pathlib
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 from dotenv import load_dotenv
 
+"""
+一番最初のデータベース構築処理のみ
+"""
+
+
 # .envファイルから環境変数を読み込む
 load_dotenv()
 
@@ -72,7 +77,7 @@ def enable_pgvector_extension(db_name=None, user=None, password=None, host=None,
 
 def create_rag_table(db_name=None, user=None, password=None, host=None, port=None):
     """rag_documentsテーブルを作成する"""
-    db_name = db_name or os.getenv('POSTGRES_DB')
+    db_name = db_name or os.getenv('RAG_DB')
     user = user or os.getenv('POSTGRES_USER')
     password = password or os.getenv('POSTGRES_PASSWORD')
     host = host or os.getenv('POSTGRES_HOST', 'localhost')
@@ -108,7 +113,7 @@ def create_rag_table(db_name=None, user=None, password=None, host=None, port=Non
 
 def create_vector_table(db_name=None, user=None, password=None, host=None, port=None):
     """vector_embeddingsテーブルを作成する"""
-    db_name = db_name or os.getenv('POSTGRES_DB')
+    db_name = db_name or os.getenv('VECTOR_DB')
     user = user or os.getenv('POSTGRES_USER')
     password = password or os.getenv('POSTGRES_PASSWORD')
     host = host or os.getenv('POSTGRES_HOST', 'localhost')
@@ -128,7 +133,6 @@ def create_vector_table(db_name=None, user=None, password=None, host=None, port=
             id SERIAL PRIMARY KEY,
             chunk_text TEXT NOT NULL,
             embedding VECTOR(1024) NOT NULL,
-            metadata JSONB,
             source_filename TEXT NOT NULL,
             source_filepath TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -143,6 +147,7 @@ def create_vector_table(db_name=None, user=None, password=None, host=None, port=
         print(f"vector_embeddingsテーブルの作成中にエラーが発生しました: {e}")
         raise
 
+
 def main():
     """データベースとテーブルの作成を行うメイン関数"""
     try:
@@ -154,18 +159,20 @@ def main():
 
         # データベースの作成
         print("PostgreSQLデータベースを作成しています...")
-        create_database()
+        create_database(db_name=os.getenv('RAG_DB'))
+        create_database(db_name=os.getenv('VECTOR_DB'))
 
         # pgvector拡張機能の有効化
         print("pgvector拡張機能を有効にしています...")
-        enable_pgvector_extension()
+        enable_pgvector_extension(db_name=os.getenv('RAG_DB'))
+        enable_pgvector_extension(db_name=os.getenv('VECTOR_DB'))
 
         # テーブルの作成
         print("RAGテーブルを作成しています...")
-        create_rag_table()
+        create_rag_table(db_name=os.getenv('RAG_DB'))
 
         print("ベクトルテーブルを作成しています...")
-        create_vector_table()
+        create_vector_table(db_name=os.getenv('VECTOR_DB'))
 
         print("データベースとテーブルの作成が完了しました。")
     except Exception as e:

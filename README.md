@@ -75,6 +75,37 @@
     uv pip install -r requirements.txt
     ```
 
+3. データベースのインストール
+
+    PostgreSQLをインストールしてください。
+
+    参考：https://www.postgresql.org/download/
+
+    visualstudio 2022のインストールをしてください。
+
+    参考：https://visualstudio.microsoft.com/ja/downloads/
+
+    pgvectorの拡張機能をインストールしてください。
+
+    参考：https://github.com/pgvector/pgvector  
+
+    上から順番に手続きを進めていけば行けます。
+
+    pgvectorのインストール後は、win + R で検索を開き、services.mscを入力して、PostgreSQLのサービスを再起動してください。
+
+    pgvectorガチャンとインストールされているかの確認は以下の手続きで行えます。
+
+    ```powershell
+    # データベースに接続（デフォルトだとpostgresユーザーで接続）
+    psql -U postgres
+
+    # pgvectorがインストールされているか確認
+    SELECT extname, extversion FROM pg_extension WHERE extname = 'vector';
+    ```
+
+    vectorが見つかっていればインストール完了。
+
+
 ## 以降のセットアップ手順
 
 1. パッケージ内に移動
@@ -103,4 +134,36 @@ uv run main.py
 
 
 
-# test
+# メモ
+
+# ベクトルデータベースのインスタンス化
+vector_db = VectorDatabase(db_config)
+
+# データベース接続とテーブル作成
+vector_db.connect()
+vector_db.create_table()
+
+# Markdownディレクトリ内のファイルを処理
+total_chunks = vector_db.process_markdown_directory()
+print(f"{total_chunks}個のチャンクが処理されました")
+
+# 定期的な更新（新規ファイルの処理と削除されたファイルのデータ削除）
+new_chunks, updated_chunks, deleted_chunks = vector_db.update_markdown_directory()
+
+
+# RAGデータベースのインスタンス化
+rag_db = RAGDatabase(db_config)
+
+# テーブルの作成（まだ存在しない場合）
+rag_db.connect()
+rag_db.create_table()
+
+# vector_databaseからデータを取得してL2ノルム正規化し、ivfflatインデックスを作成
+rag_db.build_from_vector_database()
+
+# 高速な類似検索（ivfflatインデックスを使用）
+results = rag_db.search_similar(query_embedding, limit=5, probes=10)
+
+# より正確な検索が必要な場合（インデックスを使用しない）
+exact_results = rag_db.search_similar_exact(query_embedding, limit=5)
+

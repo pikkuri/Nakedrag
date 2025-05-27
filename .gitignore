@@ -1,0 +1,8 @@
+# Ignore database files
+/db/*
+
+# Ignore data files
+/data/*
+
+# Don't ignore .env files
+!.env

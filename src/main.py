@@ -2,7 +2,7 @@
 """
 MCP RAG Server
 
-Model Context Protocol (MCP)に準拠したRAG機�Eを持つPythonサーバ�E
+Model Context Protocol (MCP)に準拠したRAG機能を持つPythonサーバー
 """
 
 import sys
@@ -21,25 +21,28 @@ def main():
     """
     メイン関数
 
-    コマンドライン引数を解析し、MCPサーバ�Eを起動します、E    """
-    # コマンドライン引数の解极E    parser = argparse.ArgumentParser(
-        description="MCP RAG Server - Model Context Protocol (MCP)に準拠したRAG機�Eを持つPythonサーバ�E"
+    コマンドライン引数を解析し、MCPサーバーを起動します。
+    """
+    # コマンドライン引数の解析
+    parser = argparse.ArgumentParser(
+        description="MCP RAG Server - Model Context Protocol (MCP)に準拠したRAG機能を持つPythonサーバー"
     )
-    parser.add_argument("--name", default="mcp-rag-server", help="サーバ�E吁E)
-    parser.add_argument("--version", default="0.1.0", help="サーバ�Eバ�Eジョン")
-    parser.add_argument("--description", default="MCP RAG Server - 褁E��形式�Eドキュメント�ERAG検索", help="サーバ�Eの説昁E)
-    parser.add_argument("--module", help="追加のチE�Eルモジュール�E�侁E myapp.tools�E�E)
+    parser.add_argument("--name", default="mcp-rag-server", help="サーバー名")
+    parser.add_argument("--version", default="0.1.0", help="サーバーバージョン")
+    parser.add_argument("--description", default="MCP RAG Server - 複数形式のドキュメントのRAG検索", help="サーバーの説明")
+    parser.add_argument("--module", help="追加のツールモジュール（例: myapp.tools）")
     args = parser.parse_args()
 
-    # 環墁E��数の読み込み
+    # 環境変数の読み込み
     load_dotenv()
 
-    # チE��レクトリの作�E
+    # ディレクトリの作成
     os.makedirs("logs", exist_ok=True)
     os.makedirs(os.environ.get("SOURCE_DIR", "data/source"), exist_ok=True)
     os.makedirs(os.environ.get("PROCESSED_DIR", "data/processed"), exist_ok=True)
 
-    # ロギングの設宁E    logging.basicConfig(
+    # ロギングの設定
+    logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[
@@ -50,34 +53,35 @@ def main():
     logger = logging.getLogger("main")
 
     try:
-        # MCPサーバ�Eの作�E
+        # MCPサーバーの作成
         server = MCPServer()
 
-        # サンプルチE�Eルの登録
+        # サンプルツールの登録
         register_example_tools(server)
 
-        # RAGサービスの作�Eと登録
-        logger.info("RAGサービスを�E期化してぁE��ぁE..")
+        # RAGサービスの作成と登録
+        logger.info("RAGサービスを初期化しています...")
         rag_service = create_rag_service_from_env()
         register_rag_tools(server, rag_service)
-        logger.info("RAGチE�Eルを登録しました")
+        logger.info("RAGツールを登録しました")
 
-        # 追加のチE�Eルモジュールがある場合�E読み込む
+        # 追加のツールモジュールがある場合は読み込む
         if args.module:
             try:
                 module = importlib.import_module(args.module)
                 if hasattr(module, "register_tools"):
                     module.register_tools(server)
-                    print(f"モジュール '{args.module}' からチE�Eルを登録しました", file=sys.stderr)
+                    print(f"モジュール '{args.module}' からツールを登録しました", file=sys.stderr)
                 else:
-                    print(f"警呁E モジュール '{args.module}' に register_tools 関数が見つかりません", file=sys.stderr)
+                    print(f"警告: モジュール '{args.module}' に register_tools 関数が見つかりません", file=sys.stderr)
             except ImportError as e:
-                print(f"警呁E モジュール '{args.module}' の読み込みに失敗しました: {str(e)}", file=sys.stderr)
+                print(f"警告: モジュール '{args.module}' の読み込みに失敗しました: {str(e)}", file=sys.stderr)
 
-        # MCPサーバ�Eの起勁E        server.start(args.name, args.version, args.description)
+        # MCPサーバーの起動
+        server.start(args.name, args.version, args.description)
 
     except KeyboardInterrupt:
-        print("サーバ�Eを終亁E��ます、E, file=sys.stderr)
+        print("サーバーを終了します。", file=sys.stderr)
         sys.exit(0)
 
     except Exception as e:

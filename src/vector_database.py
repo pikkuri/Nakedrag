@@ -1,694 +1,378 @@
 # -*- coding: utf-8 -*-
-"""
-ベクトルデータベースモジュール
-
-PostgreSQLとpgvectorを使用してベクトルの保存と検索を行います。
-"""
+# vector_database.py
 
 import logging
-import psycopg2
+import os
+import glob
 import json
-from typing import List, Dict, Any, Optional
+import pathlib
+from typing import List, Dict, Any, Tuple, Optional
+from psycopg2.extras import execute_batch
 
+from base_database import BaseDatabase
+from chunk_processor import clean_text, chunk_splitter
+from embedding_generator import EmbeddingGenerator
 
-class VectorDatabase:
+class VectorDatabase(BaseDatabase):
     """
-    ベクトルデータベースクラス
-
-    PostgreSQLとpgvectorを使用してベクトルの保存と検索を行います。
-
-    Attributes:
-        connection_params: 接続パラメータ
-        connection: データベース接続
-        logger: ロガー
+    Markdownファイルをベクトル化して格納するデータベース。
+    ./data/markdowns内のmdファイルを全てRAGで使用するベクトルの形に変換し、データを蓄積します。
     """
 
-    def __init__(self, connection_params: Dict[str, Any]):
+    def __init__(self, db_config: Dict[str, Any], dimension: int = 1024, markdown_dir: str = "./data/markdowns",
+                 model_name: str = "intfloat/multilingual-e5-large", chunk_size: int = 500, chunk_overlap: int = 100):
         """
-        VectorDatabaseのコンストラクタ
+        ベクトルデータベースの初期化。
 
         Args:
-            connection_params: 接続パラメータ
-                - host: ホスト名
-                - port: ポート番号
-                - user: ユーザー名
-                - password: パスワード
-                - database: データベース名
+            db_config (dict): データベース接続設定。
+            dimension (int): ベクトルの次元数。
+            markdown_dir (str): Markdownファイルが格納されているディレクトリ。
+            model_name (str): 埋め込みベクトル生成に使用するモデル名。
+            chunk_size (int): チャンクのサイズ。
+            chunk_overlap (int): チャンクの重複サイズ。
         """
-        # ロガーの設定
-        self.logger = logging.getLogger("vector_database")
-        self.logger.setLevel(logging.INFO)
+        super().__init__(db_config)
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self.dimension = dimension
+        self.table_name = "vector_embeddings"
+        self.markdown_dir = markdown_dir
+        self.chunk_size = chunk_size
+        self.chunk_overlap = chunk_overlap
+        self.embedding_generator: Optional[EmbeddingGenerator] = None
+        self.model_name = model_name
 
-        # 接続パラメータの保存
-        self.connection_params = connection_params
-        self.connection = None
-
-    def connect(self) -> None:
+    def create_table(self) -> None:
         """
-        データベースに接続します。
-
-        Raises:
-            Exception: 接続に失敗した場合
+        Markdownファイルのテキストとベクトルを格納するテーブルを作成します。
         """
-        try:
-            self.connection = psycopg2.connect(**self.connection_params)
-            self.logger.info("データベースに接続しました")
-        except Exception as e:
-            self.logger.error(f"データベースへの接続に失敗しました: {str(e)}")
-            raise
+        self.execute_query("CREATE EXTENSION IF NOT EXISTS vector;", fetch=False)
+        query = f'''
+        CREATE TABLE IF NOT EXISTS {self.table_name} (
+            id SERIAL PRIMARY KEY,
+            chunk_text TEXT NOT NULL,
+            embedding VECTOR({self.dimension}) NOT NULL,
+            filename TEXT NOT NULL,
+            filepath TEXT NOT NULL,
+            chunk_index INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        '''
+        self.execute_query(query, fetch=False)
+        self.commit()
+        self.logger.info(f"テーブル '{self.table_name}' を作成しました。")
 
-    def disconnect(self) -> None:
+    def store_markdown_chunk(self, chunk_text: str, embedding: List[float], filename: str, filepath: str, chunk_index: int) -> Optional[int]:
         """
-        データベースから切断します。
-        """
-        if self.connection:
-            self.connection.close()
-            self.connection = None
-            self.logger.info("データベースから切断しました")
-
-    def initialize_database(self) -> None:
-        """
-        データベースを初期化します。
-
-        テーブルとインデックスを作成します。
-
-        Raises:
-            Exception: 初期化に失敗した場合
-        """
-        try:
-            # 接続がない場合は接続
-            if not self.connection:
-                self.connect()
-
-            # カーソルの作成
-            cursor = self.connection.cursor()
-
-            # pgvectorエクステンションの有効化
-            cursor.execute("CREATE EXTENSION IF NOT EXISTS vector;")
-
-            # ドキュメントテーブルの作成
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS documents (
-                    id SERIAL PRIMARY KEY,
-                    document_id TEXT UNIQUE NOT NULL,
-                    content TEXT NOT NULL,
-                    file_path TEXT NOT NULL,
-                    chunk_index INTEGER NOT NULL,
-                    metadata JSONB,
-                    embedding vector(1024),
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-                );
-            """)
-
-            # インデックスの作成
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_documents_document_id ON documents (document_id);
-            """)
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_documents_file_path ON documents (file_path);
-            """)
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_documents_embedding ON documents USING ivfflat (embedding vector_cosine_ops);
-            """)
-
-            # コミット
-            self.connection.commit()
-            self.logger.info("データベースを初期化しました")
-
-        except Exception as e:
-            # ロールバック
-            if self.connection:
-                self.connection.rollback()
-            self.logger.error(f"データベースの初期化に失敗しました: {str(e)}")
-            raise
-
-        finally:
-            # カーソルを閉じる
-            if "cursor" in locals() and cursor:
-                cursor.close()
-
-    def insert_document(
-        self,
-        document_id: str,
-        content: str,
-        file_path: str,
-        chunk_index: int,
-        embedding: List[float],
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        """
-        ドキュメントを挿入します。
+        Markdownのチャンクとそのベクトル埋め込みを保存します。
 
         Args:
-            document_id: ドキュメントID
-            content: ドキュメントの内容
-            file_path: ファイルパス
-            chunk_index: チャンクインデックス
-            embedding: エンベディング
-            metadata: メタデータ（オプション）
+            chunk_text (str): Markdownテキストのチャンク。
+            embedding (list): ベクトル埋め込み。
+            filename (str): ファイル名。
+            filepath (str): ファイルパス。
+            chunk_index (int): チャンクのインデックス。
 
-        Raises:
-            Exception: 挿入に失敗した場合
+        Returns:
+            int: 挿入されたチャンクのID。
         """
         try:
-            # 接続がない場合は接続
-            if not self.connection:
-                self.connect()
-
-            # カーソルの作成
-            cursor = self.connection.cursor()
-
-            # メタデータをJSON形式に変換
-            metadata_json = json.dumps(metadata) if metadata else None
-
-            # ドキュメントの挿入
-            cursor.execute(
-                """
-                INSERT INTO documents (document_id, content, file_path, chunk_index, embedding, metadata)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                ON CONFLICT (document_id) 
-                DO UPDATE SET 
-                    content = EXCLUDED.content,
-                    file_path = EXCLUDED.file_path,
-                    chunk_index = EXCLUDED.chunk_index,
-                    embedding = EXCLUDED.embedding,
-                    metadata = EXCLUDED.metadata,
-                    created_at = CURRENT_TIMESTAMP;
-            """,
-                (document_id, content, file_path, chunk_index, embedding, metadata_json),
-            )
-
-            # コミット
-            self.connection.commit()
-            self.logger.debug(f"ドキュメント '{document_id}' を挿入しました")
-
+            query = f'''
+            INSERT INTO {self.table_name} (chunk_text, embedding, filename, filepath, chunk_index)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id;
+            '''
+            result = self.execute_query(query, (chunk_text, embedding, filename, filepath, chunk_index))
+            return result[0][0] if result else None
         except Exception as e:
-            # ロールバック
-            if self.connection:
-                self.connection.rollback()
-            self.logger.error(f"ドキュメントの挿入に失敗しました: {str(e)}")
-            raise
+            self.logger.error(f"チャンクの挿入中にエラーが発生しました: {e}")
+            return None
 
-        finally:
-            # カーソルを閉じる
-            if "cursor" in locals() and cursor:
-                cursor.close()
-
-    def batch_insert_documents(self, documents: List[Dict[str, Any]]) -> None:
+    def store_markdown_chunks(self, chunks: List[Dict[str, Any]]) -> List[int]:
         """
-        複数のドキュメントをバッチ挿入します。
+        複数のMarkdownチャンクを一括して保存します。
 
         Args:
-            documents: ドキュメントのリスト
-                各ドキュメントは以下のキーを持つ辞書:
-                - document_id: ドキュメントID
-                - content: ドキュメントの内容
-                - file_path: ファイルパス
-                - chunk_index: チャンクインデックス
-                - embedding: エンベディング
-                - metadata: メタデータ（オプション）
+            chunks (list): 保存するチャンクのリスト。各チャンクは
+                          {'chunk_text': str, 'embedding': list, 'filename': str, 'filepath': str, 'chunk_index': int} の形式。
 
-        Raises:
-            Exception: 挿入に失敗した場合
+        Returns:
+            list: 挿入されたチャンクのIDリスト。
         """
-        if not documents:
-            self.logger.warning("挿入するドキュメントがありません")
-            return
+        if not chunks:
+            return []
+
+        data_to_insert = []
+        for chunk in chunks:
+            chunk_text = chunk.get('chunk_text', '')
+            embedding = chunk.get('embedding', [])
+            filename = chunk.get('filename', '')
+            filepath = chunk.get('filepath', '')
+            chunk_index = chunk.get('chunk_index', 0)
+            data_to_insert.append((chunk_text, embedding, filename, filepath, chunk_index))
 
         try:
-            # 接続がない場合は接続
-            if not self.connection:
-                self.connect()
+            with self.get_cursor() as cursor:
+                query = f'''
+                INSERT INTO {self.table_name} (chunk_text, embedding, filename, filepath, chunk_index)
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING id;
+                '''
+                execute_batch(cursor, query, data_to_insert, page_size=100)
+                self.connection.commit()
 
-            # カーソルの作成
-            cursor = self.connection.cursor()
-
-            # バッチ挿入用のデータ作成
-            values = []
-            for doc in documents:
-                metadata_json = json.dumps(doc.get("metadata")) if doc.get("metadata") else None
-                values.append(
-                    (doc["document_id"], doc["content"], doc["file_path"], doc["chunk_index"], doc["embedding"], metadata_json)
+                cursor.execute(f'''
+                SELECT id FROM {self.table_name}
+                WHERE (chunk_text, filename, filepath) IN (
+                    {','.join(['(%s, %s, %s)'] * len(chunks))}
                 )
+                ORDER BY id DESC
+                LIMIT {len(chunks)}
+                ''', [val for chunk in data_to_insert for val in (chunk[0], chunk[2], chunk[3])])
 
-            # バッチ挿入
-            cursor.executemany(
-                """
-                INSERT INTO documents (document_id, content, file_path, chunk_index, embedding, metadata)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                ON CONFLICT (document_id) 
-                DO UPDATE SET 
-                    content = EXCLUDED.content,
-                    file_path = EXCLUDED.file_path,
-                    chunk_index = EXCLUDED.chunk_index,
-                    embedding = EXCLUDED.embedding,
-                    metadata = EXCLUDED.metadata,
-                    created_at = CURRENT_TIMESTAMP;
-            """,
-                values,
-            )
-
-            # コミット
-            self.connection.commit()
-            self.logger.info(f"{len(documents)} 個のドキュメントを挿入しました")
-
+                ids = [row[0] for row in cursor.fetchall()]
+                return ids
         except Exception as e:
-            # ロールバック
-            if self.connection:
-                self.connection.rollback()
-            self.logger.error(f"ドキュメントのバッチ挿入に失敗しました: {str(e)}")
-            raise
+            self.logger.error(f"チャンクの一括挿入中にエラーが発生しました: {e}")
+            return []
 
-        finally:
-            # カーソルを閉じる
-            if "cursor" in locals() and cursor:
-                cursor.close()
-
-    def search(self, query_embedding: List[float], limit: int = 5) -> List[Dict[str, Any]]:
+    def get_all_vectors(self) -> List[Tuple]:
         """
-        ベクトル検索を行います。
+        データベースから全てのベクトルを取得します。
+
+        Returns:
+            list: 全てのベクトルデータ。
+        """
+        query = f"SELECT id, chunk_text, embedding, filename, filepath, chunk_index FROM {self.table_name};"
+        return self.execute_query(query)
+
+    def get_file_vectors(self, filepath: str) -> List[Tuple]:
+        """
+        特定のファイルに関連するベクトルを取得します。
 
         Args:
-            query_embedding: クエリのエンベディング
-            limit: 返す結果の数（デフォルト: 5）
+            filepath (str): ファイルパス。
 
         Returns:
-            検索結果のリスト（関連度順）
-
-        Raises:
-            Exception: 検索に失敗した場合
+            list: ファイルに関連するベクトルデータ。
         """
-        try:
-            # 接続がない場合は接続
-            if not self.connection:
-                self.connect()
+        query = f"SELECT id, chunk_text, embedding, filename, filepath, chunk_index FROM {self.table_name} WHERE filepath = %s;"
+        return self.execute_query(query, (filepath,))
 
-            # カーソルの作成
-            cursor = self.connection.cursor()
-
-            # クエリエンベディングをPostgreSQLの配列構文に変換
-            embedding_str = str(query_embedding)
-            embedding_array = f"ARRAY{embedding_str}::vector"
-
-            # ベクトル検索
-            cursor.execute(
-                f"""
-                SELECT
-                    document_id,
-                    content,
-                    file_path,
-                    chunk_index,
-                    metadata,
-                    1 - (embedding <=> {embedding_array}) AS similarity
-                FROM
-                    documents
-                WHERE
-                    embedding IS NOT NULL
-                ORDER BY
-                    embedding <=> {embedding_array}
-                LIMIT %s;
-                """,
-                (limit,),
-            )
-
-            # 結果の取得
-            results = []
-            for row in cursor.fetchall():
-                document_id, content, file_path, chunk_index, metadata_json, similarity = row
-
-                # メタデータをJSONからデコード
-                if metadata_json:
-                    if isinstance(metadata_json, str):
-                        try:
-                            metadata = json.loads(metadata_json)
-                        except json.JSONDecodeError:
-                            metadata = {}
-                    else:
-                        # 既に辞書型の場合はそのまま使用
-                        metadata = metadata_json
-                else:
-                    metadata = {}
-
-                results.append(
-                    {
-                        "document_id": document_id,
-                        "content": content,
-                        "file_path": file_path,
-                        "chunk_index": chunk_index,
-                        "metadata": metadata,
-                        "similarity": similarity,
-                    }
-                )
-
-            self.logger.info(f"クエリに対して {len(results)} 件の結果が見つかりました")
-            return results
-
-        except Exception as e:
-            self.logger.error(f"ベクトル検索中にエラーが発生しました: {str(e)}")
-            raise
-
-        finally:
-            # カーソルを閉じる
-            if "cursor" in locals() and cursor:
-                cursor.close()
-
-    def delete_document(self, document_id: str) -> bool:
+    def get_processed_files(self) -> List[str]:
         """
-        ドキュメントを削除します。
+        すでに処理されたファイルのリストを取得します。
+
+        Returns:
+            list: 処理済みファイルのパスリスト。
+        """
+        query = f"SELECT DISTINCT filepath FROM {self.table_name};"
+        result = self.execute_query(query)
+        return [row[0] for row in result] if result else []
+
+    def delete_file_vectors(self, filepath: str) -> int:
+        """
+        特定のファイルに関連するベクトルを削除します。
 
         Args:
-            document_id: 削除するドキュメントのID
+            filepath (str): 削除するファイルのパス。
 
         Returns:
-            削除に成功した場合はTrue、ドキュメントが見つからない場合はFalse
-
-        Raises:
-            Exception: 削除に失敗した場合
+            int: 削除されたベクトルの数。
         """
         try:
-            # 接続がない場合は接続
-            if not self.connection:
-                self.connect()
+            count_query = f"SELECT COUNT(*) FROM {self.table_name} WHERE filepath = %s;"
+            count_result = self.execute_query(count_query, (filepath,))
+            count = count_result[0][0] if count_result else 0
 
-            # カーソルの作成
-            cursor = self.connection.cursor()
+            query = f"DELETE FROM {self.table_name} WHERE filepath = %s;"
+            self.execute_query(query, (filepath,), fetch=False)
 
-            # ドキュメントの削除
-            cursor.execute("DELETE FROM documents WHERE document_id = %s;", (document_id,))
-
-            # 削除された行数を取得
-            deleted_rows = cursor.rowcount
-
-            # コミット
-            self.connection.commit()
-
-            if deleted_rows > 0:
-                self.logger.info(f"ドキュメント '{document_id}' を削除しました")
-                return True
-            else:
-                self.logger.warning(f"ドキュメント '{document_id}' が見つかりません")
-                return False
-
-        except Exception as e:
-            # ロールバック
-            if self.connection:
-                self.connection.rollback()
-            self.logger.error(f"ドキュメントの削除中にエラーが発生しました: {str(e)}")
-            raise
-
-        finally:
-            # カーソルを閉じる
-            if "cursor" in locals() and cursor:
-                cursor.close()
-
-    def delete_by_file_path(self, file_path: str) -> int:
-        """
-        ファイルパスに基づいてドキュメントを削除します。
-
-        Args:
-            file_path: 削除するドキュメントのファイルパス
-
-        Returns:
-            削除されたドキュメントの数
-
-        Raises:
-            Exception: 削除に失敗した場合
-        """
-        try:
-            # 接続がない場合は接続
-            if not self.connection:
-                self.connect()
-
-            # カーソルの作成
-            cursor = self.connection.cursor()
-
-            # ドキュメントの削除
-            cursor.execute("DELETE FROM documents WHERE file_path = %s;", (file_path,))
-
-            # 削除された行数を取得
-            deleted_rows = cursor.rowcount
-
-            # コミット
-            self.connection.commit()
-
-            self.logger.info(f"ファイルパス '{file_path}' に関連する {deleted_rows} 個のドキュメントを削除しました")
-            return deleted_rows
-
-        except Exception as e:
-            # ロールバック
-            if self.connection:
-                self.connection.rollback()
-            self.logger.error(f"ドキュメントの削除中にエラーが発生しました: {str(e)}")
-            raise
-
-        finally:
-            # カーソルを閉じる
-            if "cursor" in locals() and cursor:
-                cursor.close()
-
-    def clear_database(self) -> int:
-        """
-        データベースをクリアします（全てのドキュメントを削除）。
-
-        Returns:
-            削除されたドキュメントの数
-
-        Raises:
-            Exception: クリアに失敗した場合
-        """
-        try:
-            # 接続がない場合は接続
-            if not self.connection:
-                self.connect()
-
-            # カーソルの作成
-            cursor = self.connection.cursor()
-
-            # 全てのドキュメントを削除
-            cursor.execute("DELETE FROM documents;")
-
-            # 削除された行数を取得
-            deleted_rows = cursor.rowcount
-
-            # コミット
-            self.connection.commit()
-
-            self.logger.info(f"データベースをクリアしました（{deleted_rows} 個のドキュメントを削除）")
-            return deleted_rows
-
-        except Exception as e:
-            # ロールバック
-            if self.connection:
-                self.connection.rollback()
-            self.logger.error(f"データベースのクリア中にエラーが発生しました: {str(e)}")
-            raise
-
-        finally:
-            # カーソルを閉じる
-            if "cursor" in locals() and cursor:
-                cursor.close()
-
-    def get_document_count(self) -> int:
-        """
-        データベース内のドキュメント数を取得します。
-
-        Returns:
-            ドキュメント数
-
-        Raises:
-            Exception: 取得に失敗した場合
-        """
-        try:
-            # 接続がない場合は接続
-            if not self.connection:
-                self.connect()
-
-            # カーソルの作成
-            cursor = self.connection.cursor()
-
-            # ドキュメント数を取得
-            cursor.execute("SELECT COUNT(*) FROM documents;")
-            count = cursor.fetchone()[0]
-
-            self.logger.info(f"データベース内のドキュメント数: {count}")
             return count
-
         except Exception as e:
-            self.logger.error(f"ドキュメント数の取得中にエラーが発生しました: {str(e)}")
-            raise
+            self.logger.error(f"ファイルのベクトル削除中にエラーが発生しました: {e}")
+            return 0
 
-    def get_adjacent_chunks(self, file_path: str, chunk_index: int, context_size: int = 1) -> List[Dict[str, Any]]:
+    def clear_table(self) -> bool:
         """
-        指定されたチャンクの前後のチャンクを取得します。
-
-        Args:
-            file_path: ファイルパス
-            chunk_index: チャンクインデックス
-            context_size: 前後に取得するチャンク数（デフォルト: 1）
+        テーブルの全データを削除します。
 
         Returns:
-            前後のチャンクのリスト
-
-        Raises:
-            Exception: 取得に失敗した場合
+            bool: 成功したかどうか。
         """
         try:
-            # 接続がない場合は接続
-            if not self.connection:
-                self.connect()
-
-            # カーソルの作成
-            cursor = self.connection.cursor()
-
-            # 前後のチャンクを取得
-            min_index = max(0, chunk_index - context_size)
-            max_index = chunk_index + context_size
-
-            cursor.execute(
-                """
-                SELECT
-                    document_id,
-                    content,
-                    file_path,
-                    chunk_index,
-                    metadata,
-                    1 AS similarity
-                FROM
-                    documents
-                WHERE
-                    file_path = %s
-                    AND chunk_index >= %s
-                    AND chunk_index <= %s
-                    AND chunk_index != %s
-                ORDER BY
-                    chunk_index
-                """,
-                (file_path, min_index, max_index, chunk_index),
-            )
-
-            # 結果の取得
-            results = []
-            for row in cursor.fetchall():
-                document_id, content, file_path, chunk_index, metadata_json, similarity = row
-
-                # メタデータをJSONからデコード
-                if metadata_json:
-                    if isinstance(metadata_json, str):
-                        try:
-                            metadata = json.loads(metadata_json)
-                        except json.JSONDecodeError:
-                            metadata = {}
-                    else:
-                        # 既に辞書型の場合はそのまま使用
-                        metadata = metadata_json
-                else:
-                    metadata = {}
-
-                results.append(
-                    {
-                        "document_id": document_id,
-                        "content": content,
-                        "file_path": file_path,
-                        "chunk_index": chunk_index,
-                        "metadata": metadata,
-                        "similarity": similarity,
-                        "is_context": True,  # コンテキストチャンクであることを示すフラグ
-                    }
-                )
-
-            self.logger.info(
-                f"ファイル '{file_path}' のチャンク {chunk_index} の前後 {len(results)} 件のチャンクを取得しました"
-            )
-            return results
-
+            query = f"TRUNCATE TABLE {self.table_name} RESTART IDENTITY;"
+            self.execute_query(query, fetch=False)
+            self.logger.info(f"テーブル '{self.table_name}' の全データを削除しました。")
+            return True
         except Exception as e:
-            self.logger.error(f"前後のチャンク取得中にエラーが発生しました: {str(e)}")
-            raise
+            self.logger.error(f"テーブルのクリア中にエラーが発生しました: {e}")
+            return False
 
-        finally:
-            # カーソルを閉じる
-            if "cursor" in locals() and cursor:
-                cursor.close()
-
-    def get_document_by_file_path(self, file_path: str) -> List[Dict[str, Any]]:
+    def _init_embedding_generator(self) -> None:
         """
-        指定されたファイルパスに基づいてドキュメント全体を取得します。
+        埋め込みベクトル生成器を初期化します。
+        """
+        if self.embedding_generator is None:
+            self.logger.info(f"埋め込みベクトル生成器を初期化しています。モデル: {self.model_name}")
+            self.embedding_generator = EmbeddingGenerator(model_name=self.model_name)
+
+    def _read_markdown_file(self, file_path: str) -> str:
+        """
+        Markdownファイルを読み込みます。
 
         Args:
-            file_path: ファイルパス
+            file_path (str): ファイルパス。
 
         Returns:
-            ドキュメント全体のチャンクのリスト
-
-        Raises:
-            Exception: 取得に失敗した場合
+            str: ファイルの内容。
         """
         try:
-            # 接続がない場合は接続
-            if not self.connection:
-                self.connect()
-
-            # カーソルの作成
-            cursor = self.connection.cursor()
-
-            # ファイルパスに基づいてドキュメントを取得
-            cursor.execute(
-                """
-                SELECT
-                    document_id,
-                    content,
-                    file_path,
-                    chunk_index,
-                    metadata,
-                    1 AS similarity
-                FROM
-                    documents
-                WHERE
-                    file_path = %s
-                ORDER BY
-                    chunk_index
-                """,
-                (file_path,),
-            )
-
-            # 結果の取得
-            results = []
-            for row in cursor.fetchall():
-                document_id, content, file_path, chunk_index, metadata_json, similarity = row
-
-                # メタデータをJSONからデコード
-                if metadata_json:
-                    if isinstance(metadata_json, str):
-                        try:
-                            metadata = json.loads(metadata_json)
-                        except json.JSONDecodeError:
-                            metadata = {}
-                    else:
-                        # 既に辞書型の場合はそのまま使用
-                        metadata = metadata_json
-                else:
-                    metadata = {}
-
-                results.append(
-                    {
-                        "document_id": document_id,
-                        "content": content,
-                        "file_path": file_path,
-                        "chunk_index": chunk_index,
-                        "metadata": metadata,
-                        "similarity": similarity,
-                        "is_full_document": True,  # 全文ドキュメントであることを示すフラグ
-                    }
-                )
-
-            self.logger.info(f"ファイル '{file_path}' の全文 {len(results)} チャンクを取得しました")
-            return results
-
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            return content
         except Exception as e:
-            self.logger.error(f"ドキュメント全文の取得中にエラーが発生しました: {str(e)}")
-            raise
+            self.logger.error(f"ファイル '{file_path}' の読み込み中にエラーが発生しました: {e}")
+            return ""
 
-        finally:
-            # カーソルを閉じる
-            if "cursor" in locals() and cursor:
-                cursor.close()
+    
+    def _process_markdown_file(self, file_path: str) -> List[Dict[str, Any]]:
+        """
+        Markdownファイルを処理し、チャンク化して埋め込みベクトルを生成します。
+        
+        Args:
+            file_path (str): ファイルパス。
+            
+        Returns:
+            List[Dict[str, Any]]: チャンクと埋め込みベクトルのリスト。
+        """
+        # 埋め込みベクトル生成器を初期化
+        self._init_embedding_generator()
+        
+        # ファイル情報を取得
+        file_path_obj = pathlib.Path(file_path)
+        filename = file_path_obj.name
+        filepath = str(file_path_obj.absolute())
+        
+        # ファイルを読み込む
+        content = self._read_markdown_file(file_path)
+        if not content:
+            return []
+        
+        # テキストをクリーンアップ
+        cleaned_text = clean_text(content)
+        
+        # テキストをチャンク化
+        chunks = chunk_splitter(cleaned_text, chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap)
+        
+        self.logger.info(f"ファイル '{filename}' を {len(chunks)} 個のチャンクに分割しました。")
+        
+        # 各チャンクの埋め込みベクトルを生成
+        result = []
+        embeddings = self.embedding_generator.generate_embeddings(chunks)
+        
+        for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+            result.append({
+                'chunk_text': chunk,
+                'embedding': embedding,
+                'filename': filename,
+                'filepath': filepath,
+                'chunk_index': i
+            })
+        
+        return result
+    
+    def process_markdown_directory(self) -> int:
+        """
+        Markdownディレクトリ内の全ての.mdファイルを処理します。
+        
+        Returns:
+            int: 処理されたチャンクの総数。
+        """
+        # ディレクトリが存在するか確認
+        if not os.path.exists(self.markdown_dir):
+            self.logger.error(f"ディレクトリ '{self.markdown_dir}' が存在しません。")
+            return 0
+        
+        # すでに処理されたファイルのリストを取得
+        processed_files = self.get_processed_files()
+        
+        # .mdファイルを検索
+        md_files = glob.glob(os.path.join(self.markdown_dir, "**/*.md"), recursive=True)
+        
+        if not md_files:
+            self.logger.warning(f"ディレクトリ '{self.markdown_dir}' にMarkdownファイルが見つかりません。")
+            return 0
+        
+        # 各ファイルを処理
+        total_chunks = 0
+        for file_path in md_files:
+            abs_path = str(pathlib.Path(file_path).absolute())
+            
+            # すでに処理済みのファイルはスキップ
+            if abs_path in processed_files:
+                self.logger.info(f"ファイル '{file_path}' はすでに処理済みのためスキップします。")
+                continue
+            
+            # ファイルを処理
+            self.logger.info(f"ファイル '{file_path}' を処理しています...")
+            chunks = self._process_markdown_file(file_path)
+            
+            if chunks:
+                # チャンクをデータベースに格納
+                self.store_markdown_chunks(chunks)
+                total_chunks += len(chunks)
+                self.logger.info(f"ファイル '{file_path}' の {len(chunks)} 個のチャンクを格納しました。")
+        
+        self.logger.info(f"合計 {total_chunks} 個のチャンクを格納しました。")
+        return total_chunks
+    
+    def update_markdown_directory(self) -> Tuple[int, int, int]:
+        """
+        Markdownディレクトリ内のファイルを更新します。
+        新しいファイルを処理し、削除されたファイルのデータを削除します。
+        
+        Returns:
+            Tuple[int, int, int]: (新規チャンク数, 更新チャンク数, 削除チャンク数)。
+        """
+        # ディレクトリが存在するか確認
+        if not os.path.exists(self.markdown_dir):
+            self.logger.error(f"ディレクトリ '{self.markdown_dir}' が存在しません。")
+            return (0, 0, 0)
+        
+        # すでに処理されたファイルのリストを取得
+        processed_files = self.get_processed_files()
+        
+        # 現在の.mdファイルを検索
+        current_md_files = [str(pathlib.Path(f).absolute()) for f in 
+                           glob.glob(os.path.join(self.markdown_dir, "**/*.md"), recursive=True)]
+        
+        # 新規ファイル、変更されたファイル、削除されたファイルを特定
+        new_files = [f for f in current_md_files if f not in processed_files]
+        deleted_files = [f for f in processed_files if f not in current_md_files]
+        
+        # 変更されたファイルをチェックするためには、タイムスタンプなどの追加情報が必要
+        # ここでは簡略化のため、変更されたファイルを再処理する機能は実装しない
+        
+        # 新規ファイルを処理
+        new_chunks = 0
+        for file_path in new_files:
+            self.logger.info(f"新規ファイル '{file_path}' を処理しています...")
+            chunks = self._process_markdown_file(file_path)
+            
+            if chunks:
+                # チャンクをデータベースに格納
+                self.store_markdown_chunks(chunks)
+                new_chunks += len(chunks)
+                self.logger.info(f"ファイル '{file_path}' の {len(chunks)} 個のチャンクを格納しました。")
+        
+        # 削除されたファイルのデータを削除
+        deleted_chunks = 0
+        for file_path in deleted_files:
+            self.logger.info(f"削除されたファイル '{file_path}' のデータを削除しています...")
+            count = self.delete_file_vectors(file_path)
+            deleted_chunks += count
+            self.logger.info(f"ファイル '{file_path}' の {count} 個のチャンクを削除しました。")
+        
+        self.logger.info(f"更新結果: {new_chunks} 個の新規チャンク、{deleted_chunks} 個の削除チャンク")
+        return (new_chunks, 0, deleted_chunks)
