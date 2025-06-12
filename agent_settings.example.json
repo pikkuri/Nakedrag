@@ -1,0 +1,66 @@
+{
+  "// このファイルは設定例を示すためのものです。実際の設定は agent_settings.json に記述してください": "",
+  "agents": {
+    "// エージェントの種類ごとの設定。新しいエージェントを追加する場合は、この中に設定を追加します": "",
+    "librarian": {
+      "// エージェントの基本設定": "",
+      "role": "expert_librarian",
+      "model": "gemma3:12b",
+      "temperature": 0.7,
+
+      "// システムメッセージの設定。content配列の各要素は改行で結合されます": "",
+      "system_message": {
+        "description": "エージェントの役割を定義する基本プロンプト",
+        "content": [
+          "1. ユーザーの質問を理解し、知識ベースの範囲内か判断する",
+          "2. 範囲内の場合、RAG検索で情報を取得",
+          "3. 範囲外の場合、その旨を伝え誘導する",
+          "// 必要に応じて指示を追加できます"
+        ]
+      },
+
+      "// RAGデータベースの説明文。content配列の各要素は改行で結合されます": "",
+      "rag_database_introduction": {
+        "description": "RAGシステムの概要説明",
+        "content": [
+          "このRAGシステムの説明を記述",
+          "現在の知識ベースの内容を列挙",
+          "// 必要に応じて説明を追加"
+        ]
+      },
+
+      "// 応答テンプレートの設定。{変数名}の形式で変数を埋め込めます": "",
+      "templates": {
+        "search_query": "検索クエリのテンプレート。{user_query}でユーザーの質問を参照できます",
+        "in_scope_response": "範囲内の質問への応答テンプレート",
+        "out_of_scope_response": "範囲外の質問への応答テンプレート。{user_query}と{scope_description}が使用可能",
+        "no_results": "検索結果が無い場合の応答テンプレート。{user_query}が使用可能"
+      }
+    },
+
+    "// 新しいエージェントの追加例": "",
+    "research_assistant": {
+      "role": "research_assistant",
+      "model": "gemma:7b",
+      "temperature": 0.5,
+      "system_message": {
+        "description": "研究アシスタントの役割定義",
+        "content": ["研究アシスタントの指示を記述"]
+      }
+    }
+  },
+
+  "// RAGデータベースの動作設定": "",
+  "rag_database": {
+    "chunk_size": 1000,
+    "overlap_size": 200,
+    "similarity_threshold": 0.8,
+    "max_results": 5
+  },
+
+  "// 埋め込みモデルの設定": "",
+  "embedding": {
+    "model_name": "intfloat/multilingual-e5-large",
+    "cache_dir": "./models"
+  }
+}

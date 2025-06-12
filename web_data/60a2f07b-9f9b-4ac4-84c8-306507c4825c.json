@@ -1,0 +1,19 @@
+{
+  "query": "rag_initializerの仕様について教えて",
+  "answer": "1. **質問に対する直接的な回答:** `rag_initializer` という名前の関数やクラスは、検索結果には直接的には記載されていません。しかし、`rag_service`というクラスの初期化に関する情報が記載されています。このクラスは、ドキュメント処理、エンベディング生成、ベクトルデータベースを統合し、インデックス化と検索機能を提供します。\n\n2. **回答の詳細な説明:** `rag_service` クラスの初期化は、`document_processor`、`embedding_generator`、`vector_database` のインスタンスを受け取ります。また、インデックス化するファイルが含まれるディレクトリのパス、処理済みファイルを保存するディレクトリのパス、チャンクサイズ、チャンク間のオーバーラップといったパラメータも設定可能です。チャンクサイズはデフォルトで500文字、オーバーラップは100文字です。`rag_service`クラスは、ドキュメントのインデックス化、検索、回答生成といったRAGシステムの主要な機能をオーケストレーションします。\n\n3. **参照したソース:**\n    * **チャンク 1 (rag_service.md):** `rag_service` クラスの初期化に関する情報、パラメータ（ディレクトリパス、チャンクサイズ、オーバーラップ）について説明。\n    * **チャンク 5 (rag_service.md):** `rag_service` クラスの初期化に関する情報、パラメータ（ディレクトリパス、チャンクサイズ、オーバーラップ）について説明。\n    * **チャンク 3 (design.md):** RAGシステムの概要と、ドキュメントのインデックス化、検索、回答生成といった主要な機能について説明。",
+  "sources": [
+    [
+      "rag_service.md",
+      "G:\\NakedRAG\\data\\markdowns\\rag_service.md"
+    ],
+    [
+      "rag_database.md",
+      "G:\\NakedRAG\\data\\markdowns\\rag_database.md"
+    ],
+    [
+      "design.md",
+      "G:\\NakedRAG\\data\\markdowns\\design.md"
+    ]
+  ],
+  "timestamp": "2025-05-31 11:58:15"
+}

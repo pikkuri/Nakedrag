@@ -4,5 +4,8 @@
 # Ignore data files
 /data/*
 
+# Ignore model files
+/models/*
+
 # Don't ignore .env files
 !.env

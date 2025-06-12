@@ -126,44 +126,86 @@
     deactivate
     ```
 
+
 ## プログラムの実行方法
 
+### メインプログラム
+
 ```powershell
-uv run main.py
+uv run app.py
 ```
 
+#### app.pyのコマンドラインオプション
 
+app.pyは以下のコマンドラインオプションをサポートしています：
 
-# メモ
+```powershell
+uv run app.py [オプション]
+```
 
-# ベクトルデータベースのインスタンス化
-vector_db = VectorDatabase(db_config)
+| オプション | 説明 |
+| --- | --- |
+| `--init` | 起動前にRAGシステムを初期化します |
+| `--mcp` | MCPサーバーを有効にします（環境変数の設定より優先） |
+| `--api` | APIサーバーを有効にします（環境変数の設定より優先） |
+| `--line` | LINE Botサーバーを有効にします（環境変数の設定より優先） |
+| `--web` | Webサーバーを有効にします（環境変数の設定より優先） |
+| `--all` | 全てのサーバーを有効にします（環境変数の設定より優先） |
+| `--help` | ヘルプメッセージを表示します |
 
-# データベース接続とテーブル作成
-vector_db.connect()
-vector_db.create_table()
+例：
 
-# Markdownディレクトリ内のファイルを処理
-total_chunks = vector_db.process_markdown_directory()
-print(f"{total_chunks}個のチャンクが処理されました")
+```powershell
+# 全てのサーバーを起動
+uv run app.py --all
 
-# 定期的な更新（新規ファイルの処理と削除されたファイルのデータ削除）
-new_chunks, updated_chunks, deleted_chunks = vector_db.update_markdown_directory()
+# APIサーバーのみを起動
+uv run app.py --api
 
+# RAGシステムを初期化してからMCPサーバーを起動
+uv run app.py --init --mcp
+```
 
-# RAGデータベースのインスタンス化
-rag_db = RAGDatabase(db_config)
+#### 環境変数による設定
 
-# テーブルの作成（まだ存在しない場合）
-rag_db.connect()
-rag_db.create_table()
+app.pyは以下の環境変数を使用してサーバーの有効/無効を制御します：
 
-# vector_databaseからデータを取得してL2ノルム正規化し、ivfflatインデックスを作成
-rag_db.build_from_vector_database()
+| 環境変数 | 説明 | デフォルト値 |
+| --- | --- | --- |
+| `MCP_SERVER_ENABLED` | MCPサーバーを有効にするかどうか | `false` |
+| `API_SERVER_ENABLED` | APIサーバーを有効にするかどうか | `false` |
+| `LINE_BOT_ENABLED` | LINE Botサーバーを有効にするかどうか | `false` |
+| `WEB_SERVER_ENABLED` | Webサーバーを有効にするかどうか | `false` |
 
-# 高速な類似検索（ivfflatインデックスを使用）
-results = rag_db.search_similar(query_embedding, limit=5, probes=10)
+環境変数は`.env`ファイルで設定できます。コマンドラインオプションが指定された場合は、環境変数の設定より優先されます。
 
-# より正確な検索が必要な場合（インデックスを使用しない）
-exact_results = rag_db.search_similar_exact(query_embedding, limit=5)
+#### 終了方法
 
+app.pyを終了するには、コンソールで`Ctrl+C`を押してください。すべてのサーバーが適切に終了し、共有リソース（司書エージェントなど）がクリーンアップされます。
+
+### APIサーバーの起動
+
+FastAPIを使用したAPIサーバーを起動します：
+
+```powershell
+uv run .\src\server\fastapi_server.py
+```
+
+サーバーは`http://localhost:8000`でリッスンします。
+
+### APIクライアントの実行
+
+対話型のAPIクライアントを実行します：
+
+```powershell
+uv run .\src\server\fastapi_client.py
+```
+
+クライアントを起動すると、コマンドラインで質問を入力できます。質問に対する回答はRAGシステムによって生成され、関連する参考資料へのリンクも表示されます。
+
+終了するには `exit` または `quit` と入力してください。
+
+### 注意事項
+
+- APIサーバーを起動する前に、Ollamaサーバーが実行されていることを確認してください。
+- 環境変数`OLLAMA_MODEL`に設定されているモデル（デフォルト: `gemma3:12b`）がOllamaにインストールされている必要があります。

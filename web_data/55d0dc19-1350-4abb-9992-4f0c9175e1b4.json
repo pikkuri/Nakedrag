@@ -1,0 +1,19 @@
+{
+  "query": "rag_initializerの仕様について教えて",
+  "answer": "1. **質問に対する直接的な回答:** `rag_initializer`という名前の関数やクラスは、検索結果には直接的には存在しません。しかし、`rag_service`というクラスの初期化に関連するパラメータやメソッドが記述されています。これらのパラメータは、ドキュメントのインデックス化や検索の動作を制御します。\n\n2. **回答の詳細な説明:**\n   `rag_service`クラスの初期化には、以下のパラメータが関連します。\n    * `document_processor`: ドキュメント処理クラスのインスタンス。\n    * `embedding_generator`: エンベディング生成クラスのインスタンス。\n    * `vector_database`: ベクトルデータベースクラスのインスタンス。\n    * `index_documents`: ドキュメントをインデックス化するメソッド。引数として、インデックス化するファイルが含まれるディレクトリのパス (`source_dir`)、処理済みファイルを保存するディレクトリのパス (`processed_dir`)、チャンクサイズ (`chunk_size`, デフォルト500)、チャンク間のオーバーラップ (`chunk_overlap`, デフォルト100)、およびインクリメンタルインデックス化のフラグ (`incremental`, デフォルト`False`)を受け取ります。\n    * `clear_index`: インデックスをクリアするメソッド。\n    * `get_document_count`: ドキュメント数を取得するメソッド。\n    * `clear_result`: 結果をクリアするメソッド。\n    * `db_config`: データベース接続設定辞書型。ベクトルの次元数はデフォルトで1024です。\n\n   `rag_database.md`では、データベース接続設定 (`db_config`) の詳細と、pgvector拡張機能を使用したRAG用のドキュメントテーブルの作成、および埋め込みベクトルの正規化に関する情報が記載されています。\n\n3. **参照したソース:**\n    * **チャンク 1 (rag_service.md):** `rag_service`クラスの初期化パラメータと、`index_documents`メソッドの引数について説明。\n    * **チャンク 2 (rag_database.md):** データベース接続設定 (`db_config`) と、pgvector拡張機能の使用、および埋め込みベクトルの正規化について説明。\n    * **チャンク 1 (design.md):** RAGシステムの概要と、ドキュメントのインデックス化と検索のプロセスについて説明。\n    * **チャンク 5 (rag_service.md):** `rag_service`クラスに関連するメソッドのリストを提供。",
+  "sources": [
+    [
+      "rag_service.md",
+      "G:\\NakedRAG\\data\\markdowns\\rag_service.md"
+    ],
+    [
+      "rag_database.md",
+      "G:\\NakedRAG\\data\\markdowns\\rag_database.md"
+    ],
+    [
+      "design.md",
+      "G:\\NakedRAG\\data\\markdowns\\design.md"
+    ]
+  ],
+  "timestamp": "2025-05-31 12:19:48"
+}

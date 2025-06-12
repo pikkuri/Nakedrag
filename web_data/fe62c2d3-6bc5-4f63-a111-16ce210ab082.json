@@ -1,0 +1,19 @@
+{
+  "query": "rag_initializerの仕様について教えて",
+  "answer": "1. **質問に対する直接的な回答:** `rag_initializer`という名前の関数やクラスは、検索結果には直接的には存在しません。しかし、`rag_service`モジュール内で、`index_documents`、`clear_index`、`get_document_count`といった関数が定義されており、これらはドキュメントのインデックス化、クリア、件数取得といった処理に関連する機能を提供します。また、`__init__`メソッドは`rag_service`と`rag_database`モジュールで定義されています。\n\n2. **回答の詳細な説明:**\n\n   * **`rag_service`モジュール:** このモジュールはRAGサービスを提供し、ドキュメント処理、エンベディング生成、ベクトルデータベースを統合してインデックス化と検索機能を提供します。`index_documents`関数は、指定されたディレクトリ内のファイルをインデックス化し、処理済みファイルを保存します。`clear_index`関数はインデックスをクリアし、`get_document_count`関数はドキュメント数を取得します。`__init__`メソッドは、ドキュメント処理クラス、エンベディング生成クラス、ベクトルデータベースクラスのインスタンスを受け取ります。インデックス化するファイルが含まれるディレクトリのパス、処理済みファイルを保存するディレクトリのパス、チャンクサイズ（デフォルト500）、チャンク間のオーバーラップ（デフォルト100）などのパラメータを設定できます。\n   * **`rag_database`モジュール:** このモジュールはデータベース接続設定、ベクトルの次元数（デフォルト1024）、pgvectorエクステンションを使用したRAG用のドキュメントテーブルの作成、埋め込みベクトルの正規化といった機能を提供します。`__init__`メソッドは、データベース接続設定辞書、ベクトルの次元数、ベクトルデータベースの接続設定を受け取ります。\n   * **`design.md`:** RAGシステム全体の設計に関するドキュメントであり、ドキュメントのインデックス化、検索クエリに基づく関連情報の検索、回答生成といった処理の流れを記述しています。\n   * **`rag_service.md`:** `index_documents`、`clear_index`、`get_document_count`といった関数と、それらの引数に関する情報を提供します。\n\n3. **参照したソース:**\n\n   * チャンク 1 (ファイル: rag_service.md): `rag_service`モジュールの概要、`index_documents`関数の引数（source_dir, processed_dir, chunk_size, chunk_overlap, incremental, clear_result）の説明。\n   * チャンク 2 (ファイル: rag_database.md): データベース接続設定、ベクトルの次元数、pgvectorエクステンション、埋め込みベクトルの正規化に関する情報。\n   * チャンク 3 (ファイル: design.md): RAGシステムの全体的な設計と、ドキュメントのインデックス化、検索、回答生成のプロセスに関する説明。\n   * チャンク 4 (ファイル: design.md): RAGシステム構築のための要素のリスト。\n   * チャンク 5 (ファイル: rag_service.md): `index_documents`、`clear_index`、`get_document_count`関数の引数に関する詳細。",
+  "sources": [
+    [
+      "rag_service.md",
+      "G:\\NakedRAG\\data\\markdowns\\rag_service.md"
+    ],
+    [
+      "rag_database.md",
+      "G:\\NakedRAG\\data\\markdowns\\rag_database.md"
+    ],
+    [
+      "design.md",
+      "G:\\NakedRAG\\data\\markdowns\\design.md"
+    ]
+  ],
+  "timestamp": "2025-05-31 12:11:49"
+}
